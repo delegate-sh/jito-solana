@@ -238,7 +238,8 @@ fn get_connection_stake(
     staked_nodes: &RwLock<StakedNodes>,
 ) -> Option<(Pubkey, u64, u64, u64, u64)> {
     let pubkey = get_remote_pubkey(connection)?;
-    debug!("Peer public key is {pubkey:?}");
+    let ip = connection.remote_address();
+    debug!("Peer public key is {pubkey:?}, ip is {ip:?}");
     let staked_nodes = staked_nodes.read().unwrap();
     Some((
         pubkey,
@@ -435,6 +436,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
             max_streams_per_ms,
         )
     } else {
+        debug!("Connection close for remote_addr: {:?}", connection.remote_address());
         connection.close(
             CONNECTION_CLOSE_CODE_DISALLOWED.into(),
             CONNECTION_CLOSE_REASON_DISALLOWED,
