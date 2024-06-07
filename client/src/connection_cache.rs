@@ -1,3 +1,4 @@
+use log::info;
 pub use solana_connection_cache::connection_cache::Protocol;
 use {
     quinn::Endpoint,
@@ -72,6 +73,7 @@ impl ConnectionCache {
         cert_info: Option<(&Keypair, IpAddr)>,
         stake_info: Option<(&Arc<RwLock<StakedNodes>>, &Pubkey)>,
     ) -> Self {
+        info!("Create a quic connection_cache with more client options");
         // The minimum pool size is 1.
         let connection_pool_size = 1.max(connection_pool_size);
         let mut config = QuicConfig::new().unwrap();
@@ -79,6 +81,9 @@ impl ConnectionCache {
             config.update_client_endpoint(client_endpoint);
         }
         if let Some(cert_info) = cert_info {
+            let (keypair, ip_addr) = cert_info;
+            let pubkey = keypair.pubkey();
+            info!("Using certificate with public key: {} and ip: {}", pubkey, ip_addr);
             config
                 .update_client_certificate(cert_info.0, cert_info.1)
                 .unwrap();
@@ -179,6 +184,7 @@ macro_rules! dispatch {
 }
 
 pub(crate) use dispatch;
+use solana_sdk::signer::Signer;
 
 impl ClientConnection for BlockingClientConnection {
     dispatch!(fn server_addr(&self) -> &SocketAddr);
@@ -211,6 +217,7 @@ impl solana_connection_cache::nonblocking::client_connection::ClientConnection
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use {
         super::*,
         crate::connection_cache::ConnectionCache,

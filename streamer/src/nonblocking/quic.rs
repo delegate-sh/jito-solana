@@ -692,6 +692,7 @@ async fn packet_batch_sender(
                         .total_packet_batch_send_err
                         .fetch_add(1, Ordering::Relaxed);
                     trace!("Send error: {}", e);
+                    debug!("Send error: {}", e);
                 } else {
                     stats
                         .total_packet_batches_sent
@@ -706,6 +707,7 @@ async fn packet_batch_sender(
                         .fetch_add(total_bytes, Ordering::Relaxed);
 
                     trace!("Sent {} packet batch", len);
+                    debug!("Sent {} packet batch", len);
                 }
                 break;
             }
