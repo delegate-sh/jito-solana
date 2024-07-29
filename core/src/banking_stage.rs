@@ -77,6 +77,7 @@ mod read_write_account_set;
 #[allow(dead_code)]
 mod scheduler_messages;
 mod transaction_scheduler;
+mod scheduler_metrics;
 
 // Fixed thread size seems to be fastest on GCP setup
 pub const NUM_THREADS: u32 = 6;
@@ -607,6 +608,14 @@ impl BankingStage {
             )
         }
 
+        let forwarder = Forwarder::new(
+            poh_recorder.clone(),
+            bank_forks.clone(),
+            cluster_info.clone(),
+            connection_cache.clone(),
+            data_budget.clone(),
+        );
+
         // Spawn the central scheduler thread
         bank_thread_hdls.push({
             let packet_deserializer =
@@ -618,6 +627,7 @@ impl BankingStage {
                 bank_forks,
                 scheduler,
                 worker_metrics,
+                forwarder,
             );
             Builder::new()
                 .name("solBnkTxSched".to_string())
