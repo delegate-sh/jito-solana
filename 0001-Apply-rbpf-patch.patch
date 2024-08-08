@@ -1,0 +1,76 @@
+From 7164da68c1b339badb5c3032ca0657225b6ade30 Mon Sep 17 00:00:00 2001
+From: WillHickey <will.hickey@anza.xyz>
+Date: Wed, 7 Aug 2024 17:11:29 -0500
+Subject: [PATCH] Apply rbpf patch
+
+---
+ Cargo.toml         |  4 +++-
+ src/interpreter.rs |  5 +----
+ src/jit.rs         | 17 ++++++-----------
+ 3 files changed, 10 insertions(+), 16 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index 5486da2..fa841b4 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -1,6 +1,8 @@
++[workspace]
++
+ [package]
+ name = "solana_rbpf"
+-version = "0.8.0"
++version = "0.8.0+0"
+ description = "Virtual machine and JIT compiler for eBPF programs"
+ authors = ["Solana Maintainers <maintainers@solana.foundation>"]
+ repository = "https://github.com/solana-labs/rbpf"
+diff --git a/src/interpreter.rs b/src/interpreter.rs
+index 13362e8..fc72b52 100644
+--- a/src/interpreter.rs
++++ b/src/interpreter.rs
+@@ -449,10 +449,7 @@ impl<'a, 'b, C: ContextObject> Interpreter<'a, 'b, C> {
+                 if !self.push_frame(config) {
+                     return false;
+                 }
+-                if target_pc < self.program_vm_addr {
+-                    throw_error!(self, EbpfError::CallOutsideTextSegment);
+-                }
+-                check_pc!(self, next_pc, (target_pc - self.program_vm_addr) / ebpf::INSN_SIZE as u64);
++                check_pc!(self, next_pc, target_pc.wrapping_sub(self.program_vm_addr) / ebpf::INSN_SIZE as u64);
+                 if self.executable.get_sbpf_version().static_syscalls() && self.executable.get_function_registry().lookup_by_key(next_pc as u32).is_none() {
+                     self.vm.due_insn_count += 1;
+                     self.reg[11] = next_pc;
+diff --git a/src/jit.rs b/src/jit.rs
+index c68bb8b..b4bd6f9 100644
+--- a/src/jit.rs
++++ b/src/jit.rs
+@@ -1442,21 +1442,16 @@ impl<'a, C: ContextObject> JitCompiler<'a, C> {
+ 
+         // Routine for emit_internal_call(Value::Register())
+         self.set_anchor(ANCHOR_ANCHOR_INTERNAL_FUNCTION_CALL_REG);
++        // Calculate offset relative to instruction_addresses
++        self.emit_ins(X86Instruction::load_immediate(OperandSize::S64, REGISTER_MAP[FRAME_PTR_REG], self.program_vm_addr as i64));
++        self.emit_ins(X86Instruction::alu(OperandSize::S64, 0x29, REGISTER_MAP[FRAME_PTR_REG], REGISTER_MAP[0], 0, None)); // RAX -= self.program_vm_addr;
+         // Force alignment of RAX
+         self.emit_ins(X86Instruction::alu(OperandSize::S64, 0x81, 4, REGISTER_MAP[0], !(INSN_SIZE as i64 - 1), None)); // RAX &= !(INSN_SIZE - 1);
+-        // Upper bound check
+-        // if(RAX >= self.program_vm_addr + number_of_instructions * INSN_SIZE) throw CALL_OUTSIDE_TEXT_SEGMENT;
++        // Bound check
++        // if(RAX >= number_of_instructions * INSN_SIZE) throw CALL_OUTSIDE_TEXT_SEGMENT;
+         let number_of_instructions = self.result.pc_section.len();
+-        self.emit_ins(X86Instruction::load_immediate(OperandSize::S64, REGISTER_MAP[FRAME_PTR_REG], self.program_vm_addr as i64 + (number_of_instructions * INSN_SIZE) as i64));
+-        self.emit_ins(X86Instruction::cmp(OperandSize::S64, REGISTER_MAP[FRAME_PTR_REG], REGISTER_MAP[0], None));
++        self.emit_ins(X86Instruction::cmp_immediate(OperandSize::S64, REGISTER_MAP[0], (number_of_instructions * INSN_SIZE) as i64, None));
+         self.emit_ins(X86Instruction::conditional_jump_immediate(0x83, self.relative_to_anchor(ANCHOR_CALL_OUTSIDE_TEXT_SEGMENT, 6)));
+-        // Lower bound check
+-        // if(RAX < self.program_vm_addr) throw CALL_OUTSIDE_TEXT_SEGMENT;
+-        self.emit_ins(X86Instruction::load_immediate(OperandSize::S64, REGISTER_MAP[FRAME_PTR_REG], self.program_vm_addr as i64));
+-        self.emit_ins(X86Instruction::cmp(OperandSize::S64, REGISTER_MAP[FRAME_PTR_REG], REGISTER_MAP[0], None));
+-        self.emit_ins(X86Instruction::conditional_jump_immediate(0x82, self.relative_to_anchor(ANCHOR_CALL_OUTSIDE_TEXT_SEGMENT, 6)));
+-        // Calculate offset relative to instruction_addresses
+-        self.emit_ins(X86Instruction::alu(OperandSize::S64, 0x29, REGISTER_MAP[FRAME_PTR_REG], REGISTER_MAP[0], 0, None)); // RAX -= self.program_vm_addr;
+         // Calculate the target_pc (dst / INSN_SIZE) to update REGISTER_INSTRUCTION_METER
+         // and as target pc for potential ANCHOR_CALL_UNSUPPORTED_INSTRUCTION
+         let shift_amount = INSN_SIZE.trailing_zeros();
+-- 
+2.39.3 (Apple Git-146)
+
