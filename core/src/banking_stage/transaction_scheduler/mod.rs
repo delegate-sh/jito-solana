@@ -11,3 +11,4 @@ mod transaction_priority_id;
 mod transaction_state;
 #[allow(dead_code)]
 mod transaction_state_container;
+mod scheduler_metrics;
